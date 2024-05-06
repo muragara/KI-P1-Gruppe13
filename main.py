@@ -1,10 +1,16 @@
-import src.TSPExplicit as tsp
+import tsplib95
+import matplotlib.pyplot as plt
 
 def main() -> int:
-    weights = [97, 205, 139, 86, 60]  
-    tsp_explicit = tsp.TSPExplicit('bayg29', 29)
-    tsp_explicit.calculate_distances(weights)
-    print(tsp_explicit.get_distance(0, 1)) 
+    problem = tsplib95.load("TestData/SymmetricTravelingSalesmanProblem/bays29.tsp")
+    plot_tour(problem)
+def plot_tour(problem):
+    points = {node: problem.display_data[node] for node in problem.get_nodes()}
+    for node, (x, y) in points.items():
+        plt.plot(x, y, 'bo')
+
+    plt.title("TSP Tour")
+    plt.show()
 
 if __name__ == '__main__':
     main()
