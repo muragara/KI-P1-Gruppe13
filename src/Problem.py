@@ -8,43 +8,52 @@ import matplotlib.pyplot as plt
 
 
 class Problem:
-    def __init__(self, problem_path, parent_mu, children_lambda):
+    def __init__(self, problem_path, parent_mu, children_lambda, mutation_probability, starting_population_multipliyer):
         self.problem : tsplib95.models.StandardProblem = tsplib95.load(problem_path)
         self.parent_mu = parent_mu
         self.children_lambda = children_lambda
-        self.generations = []
-        self.bestOfGeneration = []
-        self.counter = 0
+        self.mutation_probability = mutation_probability
+        self.starting_population_size = self.parent_mu * starting_population_multipliyer
 
-    def init_population(self):
+        self.best_of_generation = []
+
+        self.fig = None
+        self.ax = None
+
+    def init_population(self, starting_population_size):
         initial_population = []
-        for i in range(self.parent_mu * 10):
-            initial_population.append(self.gen_random_path())
+        for i in range(starting_population_size):
+            random_path = self.gen_random_path()
+            heapq.heappush(initial_population, (self.calc_fitness(random_path), random_path))
 
-        self.generations.append(initial_population)
+        return initial_population
 
     def gen_random_path(self):
-        cities = list(range(self.problem.dimension))
+        cities = list(range(1, self.problem.dimension + 1))
         random.shuffle(cities)
         cities.append(cities[0])
 
-        heapq.heappush(self.generations, (self.calc_fitness(cities), cities))
+        return cities
 
     def mutation_operator(self, path, mutation_probability):
         res = path
-        for i in range(len(res) - 1):
+        for i in range(len(res) - 2):
             if random.random() < mutation_probability:
                 temp = res[i]
-                random_selector = random.choice(list(range((len(res) - 1))))
+                random_selector = random.choice(list(range((len(res) - 2))))
                 res[i] = res[random_selector]
                 res[random_selector] = temp
 
+        res[len(res) - 1] = res[0]
+
         return res
 
-
     def order_crossover_recombination_operator(self, parent1: List[int], parent2: List[int]):
-        lower_bound = random.randrange(0, len(parent1) - 1)
-        upper_bound = random.randrange(lower_bound, len(parent1) - 1)
+        lower_bound = random.randrange(0, len(parent1) - 2)
+        upper_bound = random.randrange(lower_bound, len(parent1) - 2)
+        return self._order_crossover_recombination_operator(parent1, parent2, lower_bound, upper_bound)
+
+    def _order_crossover_recombination_operator(self, parent1: List[int], parent2: List[int], lower_bound, upper_bound):
         proto_child = [None] * len(parent1)
         inserted = set()
 
@@ -69,14 +78,14 @@ class Problem:
         return proto_child
 
 
-    def selection_operator(self):
+    def selection_operator(self, generation):
         survivors = []
 
         # TODO REMOVE DIRTY BUG FIX
-        self.generations.pop(len(self.generations) - 1)
+        generation.pop(len(generation) - 1)
 
-        for _ in range(self.parent_mu):
-            survivors.append(heapq.heappop(self.generations))
+        for _ in range(self.parent_mu if self.parent_mu < len(generation) else len(generation)):
+            survivors.append(heapq.heappop(generation))
 
         return survivors
 
@@ -109,60 +118,76 @@ class Problem:
         fitness = 0
 
         for i in range(len(path) - 1):
-            fitness += self.problem.edge_weights[path[i] - 1][path[i + 1] - 1]
+            # fitness += self.problem.edge_weights[path[i] - 1][path[i + 1] - 1]
+            fitness += self.problem.get_weight(path[i], path[i + 1])
 
         return fitness
 
-    def find_best_path(self):
-        self.init_population()
-        self.plot_tour(self.generations[0][1])
+    def gen_new_gen(self, old_gen):
+        best_parents = self.selection_operator(old_gen)
+        next_gen = []
+
+        for i in range(self.children_lambda):
+            child = self.order_crossover_recombination_operator(random.choice(best_parents)[1], random.choice(best_parents)[1])
+            mutated_child = self.mutation_operator(child, self.mutation_probability)
+            heapq.heappush(next_gen, (self.calc_fitness(mutated_child), mutated_child))
+
+        for i in range(len(best_parents) - 1):
+            heapq.heappush(next_gen, best_parents[i])
+
+        for _ in range(30):
+            self.gen_random_path()
+
+        return next_gen
+
+
+    def _find_best_path(self):
+        generation = self.init_population(self.starting_population_size)
+        generation_counter = 0
 
         while True:
-            parents = self.selection_operator()
-            next_gen = []
+            generation = self.gen_new_gen(generation)
+            generation_counter += 1
+            if generation_counter % 100 == 0:
+                self.best_of_generation.append((generation[0][0], generation[0][1], generation_counter))
+                self.plot_tour(self.best_of_generation[-1][1], self.best_of_generation[-1][0], self.best_of_generation[-1][2])
 
-            for i in range(self.children_lambda):
-                child = self.order_crossover_recombination_operator(random.choice(parents)[1], random.choice(parents)[1])
-                mutated_child = self.mutation_operator(child, 0.2)
-                heapq.heappush(next_gen, (self.calc_fitness(mutated_child), mutated_child))
-
-            for i in range(len(parents) - 1):
-                heapq.heappush(next_gen, parents[i])
-
-            for _ in range(30):
-                self.gen_random_path()
-
-            self.generations = []
-            self.generations = next_gen
-
-            print("Fitness: " + str(self.generations[0][0]) + "Path:" + str(self.generations[0][1]))
-            self.counter += 1
-
-            if self.counter % 300 == 0:
-                self.plot_tour(self.generations[0][1])
+    def find_best_path(self):
+        self._find_best_path()
 
 
-    def plot_tour(self, path):
-        points = {node: self.problem.display_data[node] for node in self.problem.get_nodes()}
+    def plot_tour(self, path, cost, generation):
+        if self.problem.edge_weight_type == "EXPLICIT":
+            points = {node: self.problem.display_data[node] for node in self.problem.get_nodes()}
+        elif self.problem.edge_weight_type == "EUC_2D":
+            points = {node: self.problem.node_coords[node] for node in self.problem.get_nodes()}
+        else:
+            raise ValueError(f'Unknown edge_weight_type {self.problem.edge_weight_type}')
 
-        for node in path:
-            x, y = points[node + 1]
-            plt.plot(x, y, 'bo')
+        if self.fig is None:
+            self.fig, self.ax = plt.subplots()
+            self.ax.set_title("TSP Tour Generation: " + str(generation) + "Cost: " + str(cost))
+            self.ax.grid(True)
+
+        self.ax.cla()
+        self.ax.grid(True)
+        self.ax.set_title("TSP Tour Generation: " + str(generation) + " Cost: " + str(cost))
+
+        x_coords, y_coords = zip(*[points[node] for node in path])
+        self.ax.scatter(x_coords, y_coords, color='blue')
 
         for i in range(len(path) - 1):
-            x1, y1 = points[path[i] + 1]
-            x2, y2 = points[path[i + 1] + 1]
-            plt.plot([x1, x2], [y1, y2], 'b-')
+            x1, y1 = points[path[i]]
+            x2, y2 = points[path[i + 1]]
+            self.ax.plot([x1, x2], [y1, y2], 'b-')
 
-        x_start, y_start = points[path[0]]
-        x_end, y_end = points[path[-1]]
-        plt.plot([x_end, x_start], [y_end, y_start], 'b-')
+        if path[0] == path[-1]:
+            x_start, y_start = points[path[0]]
+            x_end, y_end = points[path[-1]]
+            self.ax.plot([x_end, x_start], [y_end, y_start], 'b-')
 
-        plt.title("TSP Tour")
-        plt.xlabel("X Coordinate")
-        plt.ylabel("Y Coordinate")
-        plt.grid(True)
-        plt.show()
+        plt.pause(0.5)
+
 
 
 
