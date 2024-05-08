@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 class Problem:
     def __init__(self, problem_path, parent_mu, children_lambda):
-        self.problem = tsplib95.load(problem_path)
+        self.problem : tsplib95.models.StandardProblem = tsplib95.load(problem_path)
         self.parent_mu = parent_mu
         self.children_lambda = children_lambda
         self.generations = []
