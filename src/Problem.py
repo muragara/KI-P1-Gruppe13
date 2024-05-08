@@ -12,7 +12,7 @@ class Problem:
         self.problem : tsplib95.models.StandardProblem = tsplib95.load(problem_path)
         self.parent_mu = parent_mu
         self.children_lambda = children_lambda
-        self.mutation_probability = mutation_probability
+        self.mutation_probability = 1 / self.problem.dimension
         self.starting_population_size = self.parent_mu * starting_population_multipliyer
 
         self.best_of_generation = []
@@ -53,39 +53,47 @@ class Problem:
         upper_bound = random.randrange(lower_bound, len(parent1) - 2)
         return self._order_crossover_recombination_operator(parent1, parent2, lower_bound, upper_bound)
 
-    def _order_crossover_recombination_operator(self, parent1: List[int], parent2: List[int], lower_bound, upper_bound):
-        proto_child = [None] * len(parent1)
-        inserted = set()
+    def _order_crossover_recombination_operator(self, parent1, parent2, lower_bound, upper_bound):
+        child_direct = parent1.copy()
+        child_inverse = parent2.copy()
+        inserted_direct = set(parent1[lower_bound:upper_bound + 1])
+        inserted_inverse = set(parent2[lower_bound:upper_bound + 1])
 
-        for i in range(lower_bound, upper_bound + 1):
-            proto_child[i] = parent1[i]
-            inserted.add(parent1[i])
+        for i in range(len(parent1)):
+            if i < lower_bound or i > upper_bound:
+                for elem in parent2:
+                    if elem not in inserted_direct:
+                        child_direct[i] = elem
+                        inserted_direct.add(elem)
+                        break
 
-        result_counter = 0
+        for i in range(len(parent1)):
+            if i < lower_bound or i > upper_bound:
+                for elem in parent1:
+                    if elem not in inserted_inverse:
+                        child_inverse[i] = elem
+                        inserted_inverse.add(elem)
+                        break
 
-        for i in range(0, len(parent2) - 1):
-            if lower_bound == upper_bound and result_counter == upper_bound:
-                result_counter += 1
-            elif result_counter in range(lower_bound, upper_bound):
-                result_counter += upper_bound - lower_bound + 1
-            if parent2[i] not in inserted:
-                proto_child[result_counter] = parent2[i]
-                result_counter += 1
-
-        if proto_child[len(proto_child) - 1] is None:
-            proto_child[len(proto_child) - 1] = proto_child[0]
-
-        return proto_child
-
+        return child_direct, child_inverse
 
     def selection_operator(self, generation):
         survivors = []
-
-        # TODO REMOVE DIRTY BUG FIX
-        generation.pop(len(generation) - 1)
-
-        for _ in range(self.parent_mu if self.parent_mu < len(generation) else len(generation)):
+        num_parents = min(self.parent_mu, len(generation))
+        for _ in range(num_parents):
             survivors.append(heapq.heappop(generation))
+
+        return survivors
+
+    def tournament_selection_operator(self, generation, tournament_size):
+        survivors = []
+        num_parents = min(self.parent_mu, len(generation))
+
+        for _ in range(num_parents):
+            tournament = random.sample(generation, tournament_size)
+            winner = min(tournament, key=lambda x: x[0])
+            generation.remove(winner)
+            survivors.append(winner)
 
         return survivors
 
@@ -128,15 +136,18 @@ class Problem:
         next_gen = []
 
         for i in range(self.children_lambda):
-            child = self.order_crossover_recombination_operator(random.choice(best_parents)[1], random.choice(best_parents)[1])
-            mutated_child = self.mutation_operator(child, self.mutation_probability)
-            heapq.heappush(next_gen, (self.calc_fitness(mutated_child), mutated_child))
+            child_1, child_2 = self.order_crossover_recombination_operator(random.choice(best_parents)[1], random.choice(best_parents)[1])
+            mutated_child_1 = self.mutation_operator(child_1, self.mutation_probability)
+            heapq.heappush(next_gen, (self.calc_fitness(mutated_child_1), mutated_child_1))
+            mutated_child_2 = self.mutation_operator(child_2, self.mutation_probability)
+            heapq.heappush(next_gen, (self.calc_fitness(mutated_child_2), mutated_child_2))
 
         for i in range(len(best_parents) - 1):
             heapq.heappush(next_gen, best_parents[i])
 
-        for _ in range(30):
-            self.gen_random_path()
+        # for _ in range(100):
+        #     path = self.gen_random_path()
+        #     heapq.heappush(next_gen, (self.calc_fitness(path), path))
 
         return next_gen
 
@@ -148,9 +159,9 @@ class Problem:
         while True:
             generation = self.gen_new_gen(generation)
             generation_counter += 1
-            if generation_counter % 100 == 0:
-                self.best_of_generation.append((generation[0][0], generation[0][1], generation_counter))
-                self.plot_tour(self.best_of_generation[-1][1], self.best_of_generation[-1][0], self.best_of_generation[-1][2])
+            print("Generation #" + str(generation_counter) + " " + str(generation[0]))
+            if generation_counter % 10 == 0:
+                self.plot_tour(generation[0][1], generation[0][0], generation_counter)
 
     def find_best_path(self):
         self._find_best_path()
@@ -186,7 +197,7 @@ class Problem:
             x_end, y_end = points[path[-1]]
             self.ax.plot([x_end, x_start], [y_end, y_start], 'b-')
 
-        plt.pause(0.5)
+        plt.pause(0.1)
 
 
 

@@ -9,7 +9,9 @@ class Test_Problem(unittest.TestCase):
         self.problem = Problem(
             problem_path=problem_path,
             parent_mu=100,
-            children_lambda=200
+            children_lambda=200,
+            mutation_probability=0.2,
+            starting_population_multipliyer=10
         )
 
     def test_calc_fitness(self):
