@@ -1,9 +1,10 @@
 import argparse
+import asyncio
 
 from src.Problem import Problem
 
 
-def main() -> int:
+async def main() -> int:
     parser = handle_args()
     args = parser
     problem_path = "TestData/SymmetricTravelingSalesmanProblem/bays29.tsp"
@@ -20,7 +21,7 @@ def main() -> int:
         starting_population_multipliyer=args.starting_population
     )
 
-    problem.find_best_path()
+    await problem.find_best_path()
 
 
 def handle_args():
@@ -33,4 +34,4 @@ def handle_args():
 
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())

@@ -1,3 +1,4 @@
+import asyncio
 import random
 from typing import List
 
@@ -6,10 +7,9 @@ import heapq
 import matplotlib.pyplot as plt
 
 
-
 class Problem:
     def __init__(self, problem_path, parent_mu, children_lambda, mutation_probability, starting_population_multipliyer):
-        self.problem : tsplib95.models.StandardProblem = tsplib95.load(problem_path)
+        self.problem: tsplib95.models.StandardProblem = tsplib95.load(problem_path)
         self.parent_mu = parent_mu
         self.children_lambda = children_lambda
         self.mutation_probability = mutation_probability
@@ -20,7 +20,7 @@ class Problem:
         self.fig = None
         self.ax = None
 
-    def init_population(self, starting_population_size):
+    async def init_population(self, starting_population_size):
         initial_population = []
         for i in range(starting_population_size):
             random_path = self.gen_random_path()
@@ -77,7 +77,6 @@ class Problem:
 
         return proto_child
 
-
     def selection_operator(self, generation):
         survivors = []
 
@@ -123,12 +122,13 @@ class Problem:
 
         return fitness
 
-    def gen_new_gen(self, old_gen):
+    async def gen_new_gen(self, old_gen):
         best_parents = self.selection_operator(old_gen)
         next_gen = []
 
         for i in range(self.children_lambda):
-            child = self.order_crossover_recombination_operator(random.choice(best_parents)[1], random.choice(best_parents)[1])
+            child = self.order_crossover_recombination_operator(random.choice(best_parents)[1],
+                                                                random.choice(best_parents)[1])
             mutated_child = self.mutation_operator(child, self.mutation_probability)
             heapq.heappush(next_gen, (self.calc_fitness(mutated_child), mutated_child))
 
@@ -140,21 +140,47 @@ class Problem:
 
         return next_gen
 
-
-    def _find_best_path(self):
-        generation = self.init_population(self.starting_population_size)
+    async def _find_best_path(self):
+        max_threads = 4
+        generations = [self.init_population(self.starting_population_size) for _ in range(max_threads)]
+        generations = await asyncio.gather(*generations)
         generation_counter = 0
+        best_individuals_per_thread = []
+
+        while generation_counter < 2000:
+            tasks = [self.gen_new_gen(gen) for gen in generations]
+            new_generations = await asyncio.gather(*tasks)
+
+            generations = new_generations
+            generation_counter += 1
+            # for gen in generations:
+            #     print(f"Generation {str(generation_counter)}: {str(gen)}\n")
+            if generation_counter % 10 == 0:
+                best_of_each_async = [sublist[0] for sublist in generations if sublist]
+                best = min(best_of_each_async, key=lambda x: x[0])
+                self.plot_tour(best[1], best[0], generation_counter)
+
+        for gen in generations:
+            best_individuals = heapq.nsmallest(int(self.parent_mu/max_threads), gen, key=lambda x: x[0])
+            best_individuals_per_thread.extend(best_individuals)
+
+        merged_population = heapq.nsmallest(int(self.parent_mu/max_threads), best_individuals_per_thread, key=lambda x: x[0])
 
         while True:
-            generation = self.gen_new_gen(generation)
+            merged_population = await self.gen_new_gen(merged_population)
             generation_counter += 1
-            if generation_counter % 100 == 0:
-                self.best_of_generation.append((generation[0][0], generation[0][1], generation_counter))
-                self.plot_tour(self.best_of_generation[-1][1], self.best_of_generation[-1][0], self.best_of_generation[-1][2])
+            if generation_counter % 10 == 0:
+                self.plot_tour(merged_population[0][1], merged_population[0][0], generation_counter)
+            # print(f"Generation {str(generation_counter)}: {str(merged_population)}")
 
-    def find_best_path(self):
-        self._find_best_path()
+            # generation = self.gen_new_gen(generation)
+            # generation_counter += 1
+            # if generation_counter % 100 == 0:
+            #     self.best_of_generation.append((generation[0][0], generation[0][1], generation_counter))
+            #     self.plot_tour(self.best_of_generation[-1][1], self.best_of_generation[-1][0], self.best_of_generation[-1][2])
 
+    async def find_best_path(self):
+        await self._find_best_path()
 
     def plot_tour(self, path, cost, generation):
         if self.problem.edge_weight_type == "EXPLICIT":
@@ -187,9 +213,3 @@ class Problem:
             self.ax.plot([x_end, x_start], [y_end, y_start], 'b-')
 
         plt.pause(0.5)
-
-
-
-
-
-
