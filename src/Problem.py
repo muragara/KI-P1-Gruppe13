@@ -8,11 +8,19 @@ import matplotlib.pyplot as plt
 
 
 class Problem:
-    def __init__(self, problem_path, parent_mu, children_lambda, mutation_probability, starting_population_multipliyer):
+    def __init__(self, problem_path, parent_mu, children_lambda, mutation_probability, starting_population_multipliyer, cheat, plot_update):
         self.problem : tsplib95.models.StandardProblem = tsplib95.load(problem_path)
         self.parent_mu = parent_mu
         self.children_lambda = children_lambda
-        self.mutation_probability = 1 / self.problem.dimension
+        self.cheat = cheat
+        self.plot_update = plot_update
+
+        if mutation_probability is not None:
+            self.mutation_probability = mutation_probability
+        else:
+            self.mutation_probability = 1 / self.problem.dimension
+            # self.mutation_probability = 1 / (self.parent_mu + self.children_lambda)
+
         self.starting_population_size = self.parent_mu * starting_population_multipliyer
 
         self.best_of_generation = []
@@ -37,10 +45,10 @@ class Problem:
 
     def mutation_operator(self, path, mutation_probability):
         res = path
-        for i in range(len(res) - 2):
+        for i in range(1, len(res) - 2):
             if random.random() < mutation_probability:
                 temp = res[i]
-                random_selector = random.choice(list(range((len(res) - 2))))
+                random_selector = random.choice(list(range(1, (len(res) - 2))))
                 res[i] = res[random_selector]
                 res[random_selector] = temp
 
@@ -107,10 +115,12 @@ class Problem:
             next_node = None
             min_cost = float('inf')
 
-            for i, cost in enumerate(self.problem.edge_weights[current]):
-                if i not in visited and cost < min_cost:
-                    min_cost = cost
-                    next_node = i
+            for i in self.problem.get_nodes():
+                if i not in visited:
+                    cost = self.problem.get_weight(current, i)
+                    if cost < min_cost:
+                        min_cost = cost
+                        next_node = i
 
             if next_node is None:
                 break
@@ -121,6 +131,11 @@ class Problem:
 
         path.append(start)
         return path
+
+    def cheat_fitness(self):
+        random_node = random.choice(list(self.problem.get_nodes()))
+        neighbor = self.nearest_neighbors(random_node)
+        return self.calc_fitness(neighbor), neighbor
 
     def calc_fitness(self, path):
         fitness = 0
@@ -133,6 +148,9 @@ class Problem:
 
     def gen_new_gen(self, old_gen):
         best_parents = self.selection_operator(old_gen)
+        if self.cheat == True:
+            print(self.cheat)
+            heapq.heappush(best_parents, self.cheat_fitness())
         next_gen = []
 
         for i in range(self.children_lambda):
@@ -160,7 +178,7 @@ class Problem:
             generation = self.gen_new_gen(generation)
             generation_counter += 1
             print("Generation #" + str(generation_counter) + " " + str(generation[0]))
-            if generation_counter % 10 == 0:
+            if generation_counter % self.plot_update == 0:
                 self.plot_tour(generation[0][1], generation[0][0], generation_counter)
 
     def find_best_path(self):
